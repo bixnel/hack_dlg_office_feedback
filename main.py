@@ -41,11 +41,7 @@ class Bot:
                                     1,
                                     interactive_media.InteractiveMediaButton('add_event', 'Добавить мероприятие'),
                                     'primary'
-                                )
-                            ]
-                        ),
-                        interactive_media.InteractiveMediaGroup(
-                            [
+                                ),
                                 interactive_media.InteractiveMedia(
                                     2,
                                     interactive_media.InteractiveMediaButton('view_event', 'Посмотреть мероприятия'),
@@ -74,19 +70,33 @@ class Bot:
                     self.set_state_info(user[0], json.dumps(state_info))
                     self.bot.messaging.send_message(
                         self.bot.users.get_user_peer_by_id(user[0]),
-                        'Класс! Остался последний шаг: напиши через пробел никнеймы всех участников.\n'
-                        'Им придет сообщение с просьбой оставить отзыв.\n'
-                        'Например, так: @bixnel @albinskiy'
+                        'Класс! Выбери тип фидбэка',
+                        [
+                            interactive_media.InteractiveMediaGroup(
+                                [
+                                    interactive_media.InteractiveMedia(
+                                        3,
+                                        interactive_media.InteractiveMediaButton('feedback_type_like_dislike',
+                                                                                 '\U0001F44D / \U0001F44E'),
+                                        'primary'
+                                    ),
+                                    interactive_media.InteractiveMedia(
+                                        4,
+                                        interactive_media.InteractiveMediaButton('feedback_type_scale',
+                                                                                 'Шкала от 1 до 5'),
+                                        'primary'
+                                    )
+                                ]
+                            )
+                        ]
                     )
-                    self.set_state(user[0], 'add_event_members')
+                    self.set_state(user[0], 'add_event_feedback_type')
                 except ValueError:
                     self.bot.messaging.send_message(
                         self.bot.users.get_user_peer_by_id(user[0]),
                         'Дата должны быть в формате ДД.ММ.ГГГГ.\n'
                         'Например, %s' % tomorrow_date
                     )
-            elif state == 'add_event_members':
-                
 
     def on_click(self, *params):
         user = self.get_user(params[0].uid)
