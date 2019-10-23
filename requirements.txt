@@ -1,4 +1,4 @@
 wheel
-dialog_bot_sdk
-python-dotenv
+dialog-bot-sdk
 grpcio
+python-dotenv

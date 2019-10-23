@@ -17,6 +17,7 @@ class Bot:
             grpc.ssl_channel_credentials(),
             os.environ.get('BOT_TOKEN')
         )
+        self.bad = []
         self.bot.messaging.on_message_async(self.on_msg, self.on_click)
 
     def on_msg(self, *params):
@@ -33,7 +34,8 @@ class Bot:
                 self.set_state(user[0], 'menu')
                 self.bot.messaging.send_message(
                     params[0].peer,
-                    '\U0001F44B Привет!\nЯ — бот для удобного сбора фидбэка с мероприятий.',
+                    '\U0001F44B Привет!\n'
+                    'Я — бот для удобного сбора фидбэка с мероприятий.',
                     [
                         interactive_media.InteractiveMediaGroup(
                             [
@@ -83,7 +85,7 @@ class Bot:
                                     interactive_media.InteractiveMedia(
                                         4,
                                         interactive_media.InteractiveMediaButton('feedback_type_scale',
-                                                                                 'Шкала от 1 до 5'),
+                                                                                 'Оценка от 1 до 5'),
                                         'primary'
                                     )
                                 ]
@@ -94,22 +96,154 @@ class Bot:
                 except ValueError:
                     self.bot.messaging.send_message(
                         self.bot.users.get_user_peer_by_id(user[0]),
-                        'Дата должны быть в формате ДД.ММ.ГГГГ.\n'
+                        'Дата должна быть в формате ДД.ММ.ГГГГ\n'
                         'Например, %s' % tomorrow_date
                     )
+            elif state in ['add_event_members', 'add_event_feedback_error']:
+                users = message.strip().split()
+                self.bad = []
+                for u in users:
+                    peer = self.bot.users.find_user_outpeer_by_nick(u[1:] if u[0] == '@' else u)
+                    if not peer.id:
+                        self.bad.append(u)
+                    elif user[4] != '':
+                        event_data = json.loads(user[4])
+                        event_name = str(event_data['event_name'])
+                        event_feedback_type = str(event_data['event_feedback_type'])
+                        self.bot.messaging.send_message(
+                            peer,
+                            '\U0001F44B Привет!\n'
+                            'Ты принимал(а) участие в мероприятии *%s*.\n'
+                            'Пожалуйста, оставь небольшой фидбэк. Это не займет много времени.' % event_name
+                        )
+                        if event_feedback_type == 'like_dislike':
+                            self.bot.messaging.send_message(
+                                peer,
+                                'Тебе понравилось?',
+                                [
+                                    interactive_media.InteractiveMediaGroup(
+                                        [
+                                            interactive_media.InteractiveMedia(
+                                                'event_%s' % ''.join(event_name.lower()),
+                                                interactive_media.InteractiveMediaButton('feedback_like',
+                                                                                         '\U0001F44D'),
+                                                'primary'
+                                            ),
+                                            interactive_media.InteractiveMedia(
+                                                6,
+                                                interactive_media.InteractiveMediaButton('feedback_dislike',
+                                                                                         '\U0001F44E'),
+                                                'primary'
+                                            )
+                                        ]
+                                    )
+                                ]
+                            )
+                again_buttons = [
+                    interactive_media.InteractiveMediaGroup(
+                        [
+                            interactive_media.InteractiveMedia(
+                                6,
+                                interactive_media.InteractiveMediaButton('feedback_error_fix',
+                                                                         'Исправить'),
+                                'primary'
+                            ),
+                            interactive_media.InteractiveMedia(
+                                5,
+                                interactive_media.InteractiveMediaButton('feedback_error_skip',
+                                                                         'Пропустить'),
+                                'danger'
+                            )
+                        ]
+                    )
+                ]
+                if len(self.bad) == 1:
+                    self.bot.messaging.send_message(
+                        self.bot.users.get_user_peer_by_id(user[0]),
+                        '\U0001F6A7 Пользователю %s не удалось отправить сообщение.\n'
+                        'Возможно, допущена ошибка в никнейме или такого пользователя не существует \U0001F937'
+                        '' % self.bad[0],
+                        again_buttons
+                    )
+                    self.set_state(user[0], 'add_event_feedback_error')
+                elif len(self.bad) > 1:
+                    self.bot.messaging.send_message(
+                        self.bot.users.get_user_peer_by_id(user[0]),
+                        '\U0001F6A7 Некоторым пользователям не удалось отправить сообщение.\n'
+                        'Возможно, допущены ошибки в никнеймах или таких пользователей не существует \U0001F937\n\n'
+                        '%s' % ' ' .join(self.bad),
+                        again_buttons
+                    )
+                    self.set_state(user[0], 'add_event_feedback_error')
+                else:
+                    self.bot.messaging.send_message(
+                        self.bot.users.get_user_peer_by_id(user[0]),
+                        '\U00002705 Сообщения успешно отправлены.'
+                    )
+                    self.bot.messaging.send_message(
+                        self.bot.users.get_user_peer_by_id(user[0]),
+                        'Главное меню',
+                        [
+                            interactive_media.InteractiveMediaGroup(
+                                [
+                                    interactive_media.InteractiveMedia(
+                                        1,
+                                        interactive_media.InteractiveMediaButton('add_event', 'Добавить мероприятие'),
+                                        'primary'
+                                    ),
+                                    interactive_media.InteractiveMedia(
+                                        2,
+                                        interactive_media.InteractiveMediaButton('view_event',
+                                                                                 'Посмотреть мероприятия'),
+                                        'primary'
+                                    )
+                                ]
+                            )
+                        ]
+                    )
+                    self.set_state(user[0], 'menu')
 
     def on_click(self, *params):
         user = self.get_user(params[0].uid)
+        state = user[3]
         value = params[0].value
-
-        if value == 'add_event':
-            if user[2] == 'admin':
+        if user[2] == 'admin':
+            if value == 'add_event':
                 self.bot.messaging.send_message(
                     self.bot.users.get_user_peer_by_id(user[0]),
                     '*Добавление мероприятия*\n'
                     'Введи название ивента'
                 )
                 self.set_state(user[0], 'add_event_name')
+            elif value in ['feedback_type_like_dislike', 'feedback_type_scale']:
+                state_info = json.loads(user[4])
+                state_info['event_feedback_type'] = value[14:]
+                self.set_state_info(user[0], json.dumps(state_info))
+                self.bot.messaging.send_message(
+                    self.bot.users.get_user_peer_by_id(user[0]),
+                    'Супер! Остался последний шаг: напиши через пробел никнеймы всех участников.\n'
+                    'Им придет сообщение с просьбой оставить фидбэк.\n'
+                    'Например, так: @bixnel @albinskiy'
+                )
+                self.set_state(user[0], 'add_event_members')
+            elif state == 'add_event_feedback_error':
+                if value == 'feedback_error_skip':
+                    self.bot.messaging.send_message(
+                        self.bot.users.get_user_peer_by_id(user[0]),
+                        '\U00002705 Сообщения успешно отправлены.'
+                    )
+                elif value == 'feedback_error_fix':
+                    if len(self.bad) == 1:
+                        self.bot.messaging.send_message(
+                            self.bot.users.get_user_peer_by_id(user[0]),
+                            'Ок, пришли правильный никнейм для пользователя %s\n' % self.bad[0], ''
+                        )
+                    elif len(self.bad) > 1:
+                        self.bot.messaging.send_message(
+                            self.bot.users.get_user_peer_by_id(user[0]),
+                            'Ок, пришли через пробел правильные никнеймы для пользователей:\n'
+                            '%s' % ' '.join(self.bad)
+                        )
 
     def get_user(self, uid):
         cur = self.con.cursor()
