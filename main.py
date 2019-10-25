@@ -273,11 +273,11 @@ class Bot:
             elif value == 'view_events':
                 data = self.get_events()
                 events = []
-                for i in range(len(data)):
+                for i in data:
                     today = int(datetime.datetime.timestamp(
                         datetime.datetime.strptime(datetime.date.today().strftime('%d.%m.%Y'), '%d.%m.%Y')))
-                    emoji = ' \U0001F3C1' if int(data[i][2]) <= today else ''
-                    s = str(data[i][0]) + '. ' + str(data[i][1]) + emoji
+                    emoji = ' \U0001F3C1' if int(i[2]) <= today else ''
+                    s = str(i[0]) + '. ' + str(i[1]) + emoji
                     events.append(s)
                 if len(events) == 0:
                     events.append('Здесь пока пусто.')
@@ -358,12 +358,6 @@ class Bot:
         cur.close()
         return user if user else None
 
-    def get_events(self, uid):
-        cur = self.con.cursor()
-        user = cur.execute('SELECT * FROM users WHERE id = ? LIMIT 1', (int(uid),)).fetchone()
-        cur.close()
-        return user if user else None
-
     def set_state(self, uid, state):
         cur = self.con.cursor()
         cur.execute('UPDATE users SET state = ? WHERE id = ?', (str(state), int(uid)))
@@ -406,7 +400,8 @@ class Bot:
 
     def get_feedback_from_db(self, event_id):
         cur = self.con.cursor()
-        data = cur.execute('SELECT * FROM event_%s' % str(event_id)).fetchall()
+        s = 'event_' + str(event_id)
+        data = cur.execute('SELECT * FROM ?', (s, )).fetchall()
         cur.close()
         return data
 
@@ -424,9 +419,10 @@ class Bot:
                 'Фидбэк по этому мероприятию больше не принимается \U0001F614'
             )
         else:
-            if not cur.execute('SELECT * FROM event_%s WHERE id = ?' % str(event_id), (int(uid), )).fetchone():
-                cur.execute('INSERT INTO event_%s (id, username, feedback) VALUES (?, ?, ?)' % str(event_id),
-                            (int(uid), username, str(feedback))).fetchall()
+            s = 'event_' + str(event_id)
+            if not cur.execute('SELECT * FROM ? WHERE id = ?', (s, int(uid), )).fetchone():
+                cur.execute('INSERT INTO ? (id, username, feedback) VALUES (?, ?, ?)',
+                            (s, int(uid), username, str(feedback))).fetchall()
                 self.con.commit()
             else:
                 self.bot.messaging.send_message(
