@@ -22,7 +22,6 @@ class Bot:
 
     def on_msg(self, *params):
         user = self.get_user(params[0].sender_uid)
-        print(user)
         message = str(params[0].message.textMessage.text)
         if user:
             state = user[3]
@@ -108,7 +107,6 @@ class Bot:
                 self.bad = []
                 good = []
                 event_data = json.loads(user[4])
-                print(event_data)
                 event_name = str(event_data['event_name'])
                 event_end_date = str(event_data['event_end_date'])
                 event_feedback_type = str(event_data['event_feedback_type'])
@@ -226,10 +224,9 @@ class Bot:
                         raise ValueError
                     event = data[event_ids.index(event_id)]
                     feedback = self.get_feedback_from_db(event_id)
-                    print(event, feedback)
                     today = int(datetime.datetime.timestamp(
                         datetime.datetime.strptime(datetime.date.today().strftime('%d.%m.%Y'), '%d.%m.%Y')))
-                    end_date = datetime.datetime.fromtimestamp(1571962485).strftime('%d.%m.%Y')
+                    end_date = datetime.datetime.fromtimestamp(event[2]).strftime('%d.%m.%Y')
                     if int(event[2]) <= today:
                         process = '\U0001F3C1 Сбор завершен *%s*' % end_date
                     else:
@@ -329,16 +326,9 @@ class Bot:
             elif value == 'back_to_menu':
                 self.back_to_menu(user)
 
-        elif value.startswith('feedback_like') or value.startswith('feedback_dislike'):
-            print('LIKE / DISLIKE FEEDBACK')
-            print(params[0])
+        elif value.startswith('feedback_like') or value.startswith('feedback_dislike') or value.startswith('feedback_'):
             feedback = params[0].id.split('_')[1:]
             self.add_feedback(user[0], int(feedback[1]), feedback[0])
-
-        elif value.startswith('feedback_'):
-            print('SCALE FEEDBACK')
-            feedback = params[0].id.split('_')[1:]
-            print(feedback)
 
     def get_user(self, uid):
         cur = self.con.cursor()
@@ -378,8 +368,9 @@ class Bot:
         cur.execute('INSERT INTO events (title, end_date, feedback_type) VALUES(?, ?, ?)',
                     (str(event_name), int(date), str(event_feedback_type)))
         row_id = cur.lastrowid
-        cur.execute('CREATE TABLE event_%s(id INTEGER PRIMARY KEY, username TEXT, feedback TEXT)'
-                    % row_id)
+        s = 'event_' + str(row_id)
+        cur.execute('CREATE TABLE  %s(id INTEGER PRIMARY KEY, username TEXT, feedback TEXT)'
+                    % s)
         self.con.commit()
         cur.close()
         return row_id
@@ -401,7 +392,7 @@ class Bot:
     def get_feedback_from_db(self, event_id):
         cur = self.con.cursor()
         s = 'event_' + str(event_id)
-        data = cur.execute('SELECT * FROM ?', (s, )).fetchall()
+        data = cur.execute('SELECT * FROM %s' % s).fetchall()
         cur.close()
         return data
 
@@ -413,21 +404,24 @@ class Bot:
         event_data = cur.execute('SELECT * FROM events WHERE id = ?', (str(event_id), )).fetchone()
         end_date = int(event_data[2]) if event_data else 0
         if not event_data or end_date <= today:
-            print(event_data, end_date, today)
             self.bot.messaging.send_message(
                 self.bot.users.get_user_peer_by_id(uid),
                 'Фидбэк по этому мероприятию больше не принимается \U0001F614'
             )
         else:
             s = 'event_' + str(event_id)
-            if not cur.execute('SELECT * FROM ? WHERE id = ?', (s, int(uid), )).fetchone():
-                cur.execute('INSERT INTO ? (id, username, feedback) VALUES (?, ?, ?)',
-                            (s, int(uid), username, str(feedback))).fetchall()
+            if not cur.execute('SELECT * FROM %s WHERE id = ?' % s, (int(uid), )).fetchone():
+                cur.execute('INSERT INTO %s (id, username, feedback) VALUES (?, ?, ?)' % s,
+                            (int(uid), username, str(feedback))).fetchall()
                 self.con.commit()
+                self.bot.messaging.send_message(
+                    self.bot.users.get_user_peer_by_id(uid),
+                    'Спасибо за отзыв!'
+                )
             else:
                 self.bot.messaging.send_message(
                     self.bot.users.get_user_peer_by_id(uid),
-                    'Ты уже оставляфл(а) фидбэк по этому ивенту.'
+                    'Ты уже оставлял(а) фидбэк по этому ивенту.'
                 )
         cur.close()
         return 1
