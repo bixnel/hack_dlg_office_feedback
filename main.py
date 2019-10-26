@@ -233,75 +233,73 @@ class Bot:
         user = self.get_user(params[0].uid)
         state = user[3]
         value = params[0].value
-        if user[2] == 'admin':
-            if value == 'add_event':
+        if value == 'add_event':
+            self.bot.messaging.send_message(
+                self.bot.users.get_user_peer_by_id(user[0]),
+                '*Добавление мероприятия*\n'
+                'Введи название ивента'
+            )
+            self.set_state(user[0], 'add_event_name')
+        elif value == 'view_events':
+            self.view_events(user)
+        elif value in ['feedback_type_like_dislike', 'feedback_type_scale']:
+            state_info = json.loads(user[4])
+            state_info['event_feedback_type'] = value[14:]
+            self.set_state_info(user[0], json.dumps(state_info))
+            self.bot.messaging.send_message(
+                self.bot.users.get_user_peer_by_id(user[0]),
+                'Супер! Остался последний шаг: напиши через пробел никнеймы всех участников.\n'
+                'Им придет сообщение с просьбой оставить фидбэк.\n'
+                'Например, так: @bixnel @albinskiy'
+            )
+            self.set_state(user[0], 'add_event_members')
+        elif state == 'add_event_feedback_error':
+            if value == 'feedback_error_skip':
                 self.bot.messaging.send_message(
                     self.bot.users.get_user_peer_by_id(user[0]),
-                    '*Добавление мероприятия*\n'
-                    'Введи название ивента'
+                    '\U00002705 Сообщения успешно отправлены.'
                 )
-                self.set_state(user[0], 'add_event_name')
-            elif value == 'view_events':
-                self.view_events(user)
-            elif value in ['feedback_type_like_dislike', 'feedback_type_scale']:
-                state_info = json.loads(user[4])
-                state_info['event_feedback_type'] = value[14:]
-                self.set_state_info(user[0], json.dumps(state_info))
-                self.bot.messaging.send_message(
-                    self.bot.users.get_user_peer_by_id(user[0]),
-                    'Супер! Остался последний шаг: напиши через пробел никнеймы всех участников.\n'
-                    'Им придет сообщение с просьбой оставить фидбэк.\n'
-                    'Например, так: @bixnel @albinskiy'
-                )
-                self.set_state(user[0], 'add_event_members')
-            elif state == 'add_event_feedback_error':
-                if value == 'feedback_error_skip':
+            elif value == 'feedback_error_fix':
+                if len(self.bad) == 1:
                     self.bot.messaging.send_message(
                         self.bot.users.get_user_peer_by_id(user[0]),
-                        '\U00002705 Сообщения успешно отправлены.'
+                        'Ок, пришли правильный никнейм для пользователя %s\n' % self.bad[0], ''
                     )
-                elif value == 'feedback_error_fix':
-                    if len(self.bad) == 1:
-                        self.bot.messaging.send_message(
-                            self.bot.users.get_user_peer_by_id(user[0]),
-                            'Ок, пришли правильный никнейм для пользователя %s\n' % self.bad[0], ''
-                        )
-                    elif len(self.bad) > 1:
-                        self.bot.messaging.send_message(
-                            self.bot.users.get_user_peer_by_id(user[0]),
-                            'Ок, пришли через пробел правильные никнеймы для пользователей:\n'
-                            '%s' % ' '.join(self.bad)
-                        )
-            elif value == 'back_to_menu':
-                self.back_to_menu(user)
-            elif value == 'back_to_event_list':
-                self.view_events(user)
-            elif value.startswith('export_'):
-                event_id = int(value[7:])
-                feedback = self.get_feedback_from_db(event_id)
-                feedback_type = 'like_dislike' if feedback[0][2] in ['like', 'dislike'] else 'scale'
-                path = self.export_to_excel(feedback, feedback_type)
-                self.bot.messaging.send_file(self.bot.users.get_user_peer_by_id(user[0]), path)
-                os.remove(path)
-            elif value.startswith('delete_'):
-                event_id = int(value[7:])
-                self.delete_event(event_id)
-                self.bot.messaging.send_message(
-                    self.bot.users.get_user_peer_by_id(user[0]),
-                    'Ивент успешно удален.',
-                    [
-                        interactive_media.InteractiveMediaGroup(
-                            [
-                                interactive_media.InteractiveMedia(
-                                    14,
-                                    interactive_media.InteractiveMediaButton('back_to_event_list', 'К списку ивентов'),
-                                    'primary'
-                                )
-                            ]
-                        )
-                    ]
-                )
-
+                elif len(self.bad) > 1:
+                    self.bot.messaging.send_message(
+                        self.bot.users.get_user_peer_by_id(user[0]),
+                        'Ок, пришли через пробел правильные никнеймы для пользователей:\n'
+                        '%s' % ' '.join(self.bad)
+                    )
+        elif value == 'back_to_menu':
+            self.back_to_menu(user)
+        elif value == 'back_to_event_list':
+            self.view_events(user)
+        elif value.startswith('export_'):
+            event_id = int(value[7:])
+            feedback = self.get_feedback_from_db(event_id)
+            feedback_type = 'like_dislike' if feedback[0][2] in ['like', 'dislike'] else 'scale'
+            path = self.export_to_excel(feedback, feedback_type)
+            self.bot.messaging.send_file(self.bot.users.get_user_peer_by_id(user[0]), path)
+            os.remove(path)
+        elif value.startswith('delete_'):
+            event_id = int(value[7:])
+            self.delete_event(event_id)
+            self.bot.messaging.send_message(
+                self.bot.users.get_user_peer_by_id(user[0]),
+                'Ивент успешно удален.',
+                [
+                    interactive_media.InteractiveMediaGroup(
+                        [
+                            interactive_media.InteractiveMedia(
+                                14,
+                                interactive_media.InteractiveMediaButton('back_to_event_list', 'К списку ивентов'),
+                                'primary'
+                            )
+                        ]
+                    )
+                ]
+            )
         elif value.startswith('feedback_like') or value.startswith('feedback_dislike') or value.startswith('feedback_'):
             feedback = params[0].id.split('_')[1:]
             self.add_feedback(user[0], int(feedback[1]), feedback[0])
@@ -538,7 +536,6 @@ class Bot:
     def export_to_excel(self, feedback, feedback_type):
         book = xlwt.Workbook()
         sheet = book.add_sheet('Лист1', cell_overwrite_ok=True)
-        print(feedback_type, feedback)
         sheet.write(0, 0, 'Пользователь', self.header_style)
         if feedback_type == 'like_dislike':
             sheet.write(0, 1, 'Понравилось', self.header_style)
