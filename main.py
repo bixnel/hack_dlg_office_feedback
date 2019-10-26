@@ -279,7 +279,7 @@ class Bot:
             elif value.startswith('export_'):
                 event_id = int(value[7:])
                 feedback = self.get_feedback_from_db(event_id)
-                feedback_type = 'like_dislike' if feedback[0][1] in ['like', 'dislike'] else 'scale'
+                feedback_type = 'like_dislike' if feedback[0][2] in ['like', 'dislike'] else 'scale'
                 path = self.export_to_excel(feedback, feedback_type)
                 self.bot.messaging.send_file(self.bot.users.get_user_peer_by_id(user[0]), path)
                 os.remove(path)
@@ -458,7 +458,7 @@ class Bot:
                 feedback_list = 'Еще никто не оставил отзыв.'
             else:
                 feedback_list = '\n'.join([i[0] + ': ' + '\U0001F44D' if i[1] == 'like' else
-                                           i[0] + ': ' + '\U0001F44E' if i[1] == 'dislike' else i[1]
+                                           i[0] + ': ' + '\U0001F44E' if i[1] == 'dislike' else i[0] + ': ' + str(i[1])
                                            for i in feedback_members] +
                                           [i + ': —' for i in members if i not in [e[0]
                                                                                    for e in feedback_members]])
@@ -536,10 +536,9 @@ class Bot:
         self.set_state(user[0], 'view_events')
 
     def export_to_excel(self, feedback, feedback_type):
-        print('EXCEL')
         book = xlwt.Workbook()
         sheet = book.add_sheet('Лист1', cell_overwrite_ok=True)
-
+        print(feedback_type, feedback)
         sheet.write(0, 0, 'Пользователь', self.header_style)
         if feedback_type == 'like_dislike':
             sheet.write(0, 1, 'Понравилось', self.header_style)
@@ -548,8 +547,12 @@ class Bot:
 
         sheet.col(0).width = 256 * 20
         sheet.col(1).width = 256 * 8
-        for i in range(10):
-            sheet.write(i + 1, 0, str(i))
+        for i in range(len(feedback)):
+            sheet.write(i + 1, 0, '@' + str(feedback[i][1]))
+            if feedback_type == 'like_dislike':
+                sheet.write(i + 1, 1, 'Да' if feedback[i][2] == 'like' else 'Нет')
+            else:
+                sheet.write(i + 1, 1, str(feedback[i][2]))
         filename = 'Фидбэк.xls'
         book.save(filename)
         return filename
