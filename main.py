@@ -6,6 +6,7 @@ import sqlite3
 from dotenv import load_dotenv
 import json
 import datetime
+import xlwt
 
 
 class Bot:
@@ -18,6 +19,17 @@ class Bot:
             os.environ.get('BOT_TOKEN')
         )
         self.bad = []
+        self.header_style = xlwt.easyxf(
+            'pattern: pattern solid, fore_colour light_yellow;'
+            'font: bold True;'
+            'borders: top_color black, bottom_color black, right_color black, left_color black,'
+            'left thin, right thin, top thin, bottom thin;'
+        )
+        self.default_style = xlwt.easyxf(
+            'borders: top_color black, bottom_color black, right_color black, left_color black,'
+            'left thin, right thin, top thin, bottom thin;'
+            'align: horiz left;'
+        )
         self.bot.messaging.on_message_async(self.on_msg, self.on_click)
 
     def on_msg(self, *params):
@@ -215,45 +227,7 @@ class Bot:
                     )
                     self.back_to_menu(user)
             elif state == 'view_events':
-                data = self.get_events()
-                example_event_id = data[0][0]
-                event_ids = [i[0] for i in data]
-                try:
-                    event_id = int(message.strip())
-                    if event_id not in event_ids:
-                        raise ValueError
-                    event = data[event_ids.index(event_id)]
-                    feedback = self.get_feedback_from_db(event_id)
-                    today = int(datetime.datetime.timestamp(
-                        datetime.datetime.strptime(datetime.date.today().strftime('%d.%m.%Y'), '%d.%m.%Y')))
-                    end_date = datetime.datetime.fromtimestamp(event[2]).strftime('%d.%m.%Y')
-                    if int(event[2]) <= today:
-                        process = '\U0001F3C1 Сбор завершен *%s*' % end_date
-                    else:
-                        process = '\U0001F552 Сбор закончится *%s*' % end_date
-                    feedback_type = '\U0001F44D / \U0001F44E' if event[3] == 'like_dislike' else 'оценка 1 — 5'
-                    members = event[4].split(', ')
-                    feedback_members = [['@' + str(i[1]), i[2]] for i in feedback]
-                    if len(feedback_members) == 0:
-                        feedback_list = 'Еще никто не оставил отзыв.'
-                    else:
-                        feedback_list = '\n'.join([i[0] + ': ' + '\U0001F44D' if i[1] == 'like' else
-                                                   i[0] + ': ' + '\U0001F44E' if i[1] == 'dislike' else i[1]
-                                                   for i in feedback_members] +
-                                                  [i + ': —' for i in members if i not in [e[0]
-                                                                                           for e in feedback_members]])
-                    self.bot.messaging.send_message(
-                        self.bot.users.get_user_peer_by_id(user[0]),
-                        'Фидбэк по мероприятию *%s*\n'
-                        '%s, тип: %s\n\n'
-                        '%s' % (event[1], process, feedback_type, feedback_list)
-                    )
-                except ValueError:
-                    self.bot.messaging.send_message(
-                        self.bot.users.get_user_peer_by_id(user[0]),
-                        'Номер ивента должен быть из списка выше!\n'
-                        'Например, %s' % example_event_id
-                    )
+                self.view_event(user, message)
 
     def on_click(self, *params):
         user = self.get_user(params[0].uid)
@@ -268,32 +242,7 @@ class Bot:
                 )
                 self.set_state(user[0], 'add_event_name')
             elif value == 'view_events':
-                data = self.get_events()
-                events = []
-                for i in data:
-                    today = int(datetime.datetime.timestamp(
-                        datetime.datetime.strptime(datetime.date.today().strftime('%d.%m.%Y'), '%d.%m.%Y')))
-                    emoji = ' \U0001F3C1' if int(i[2]) <= today else ''
-                    s = str(i[0]) + '. ' + str(i[1]) + emoji
-                    events.append(s)
-                if len(events) == 0:
-                    events.append('Здесь пока пусто.')
-                buttons = [
-                    interactive_media.InteractiveMediaGroup(
-                        [
-                            interactive_media.InteractiveMedia(
-                                9,
-                                interactive_media.InteractiveMediaButton('back_to_menu', 'Назад в меню')
-                            )
-                        ]
-                    )
-                ]
-                self.bot.messaging.send_message(
-                    self.bot.users.get_user_peer_by_id(user[0]),
-                    '*Для подробной информации пришли мне номер ивента*\n\n' + '\n'.join(events),
-                    buttons
-                )
-                self.set_state(user[0], 'view_events')
+                self.view_events(user)
             elif value in ['feedback_type_like_dislike', 'feedback_type_scale']:
                 state_info = json.loads(user[4])
                 state_info['event_feedback_type'] = value[14:]
@@ -325,6 +274,33 @@ class Bot:
                         )
             elif value == 'back_to_menu':
                 self.back_to_menu(user)
+            elif value == 'back_to_event_list':
+                self.view_events(user)
+            elif value.startswith('export_'):
+                event_id = int(value[7:])
+                feedback = self.get_feedback_from_db(event_id)
+                feedback_type = 'like_dislike' if feedback[0][1] in ['like', 'dislike'] else 'scale'
+                path = self.export_to_excel(feedback, feedback_type)
+                self.bot.messaging.send_file(self.bot.users.get_user_peer_by_id(user[0]), path)
+                os.remove(path)
+            elif value.startswith('delete_'):
+                event_id = int(value[7:])
+                self.delete_event(event_id)
+                self.bot.messaging.send_message(
+                    self.bot.users.get_user_peer_by_id(user[0]),
+                    'Ивент успешно удален.',
+                    [
+                        interactive_media.InteractiveMediaGroup(
+                            [
+                                interactive_media.InteractiveMedia(
+                                    14,
+                                    interactive_media.InteractiveMediaButton('back_to_event_list', 'К списку ивентов'),
+                                    'primary'
+                                )
+                            ]
+                        )
+                    ]
+                )
 
         elif value.startswith('feedback_like') or value.startswith('feedback_dislike') or value.startswith('feedback_'):
             feedback = params[0].id.split('_')[1:]
@@ -369,11 +345,18 @@ class Bot:
                     (str(event_name), int(date), str(event_feedback_type)))
         row_id = cur.lastrowid
         s = 'event_' + str(row_id)
-        cur.execute('CREATE TABLE  %s(id INTEGER PRIMARY KEY, username TEXT, feedback TEXT)'
+        cur.execute('CREATE TABLE %s(id INTEGER PRIMARY KEY, username TEXT, feedback TEXT)'
                     % s)
         self.con.commit()
         cur.close()
         return row_id
+
+    def delete_event(self, event_id):
+        cur = self.con.cursor()
+        cur.execute('DROP TABLE event_%s' % event_id)
+        cur.execute('DELETE FROM events WHERE id = ?', (event_id, ))
+        self.con.commit()
+        cur.close()
 
     def add_event_members(self, event_id, members):
         cur = self.con.cursor()
@@ -450,6 +433,126 @@ class Bot:
         )
         self.set_state(user[0], 'menu')
         self.set_state_info(user[0], '')
+
+    def view_event(self, user, message):
+        data = self.get_events()
+        example_event_id = data[0][0]
+        event_ids = [i[0] for i in data]
+        try:
+            event_id = int(message.strip())
+            if event_id not in event_ids:
+                raise ValueError
+            event = data[event_ids.index(event_id)]
+            feedback = self.get_feedback_from_db(event_id)
+            today = int(datetime.datetime.timestamp(
+                datetime.datetime.strptime(datetime.date.today().strftime('%d.%m.%Y'), '%d.%m.%Y')))
+            end_date = datetime.datetime.fromtimestamp(event[2]).strftime('%d.%m.%Y')
+            if int(event[2]) <= today:
+                process = '\U0001F3C1 Сбор завершен *%s*' % end_date
+            else:
+                process = '\U0001F552 Сбор закончится *%s*' % end_date
+            feedback_type = '\U0001F44D / \U0001F44E' if event[3] == 'like_dislike' else 'оценка 1 — 5'
+            members = event[4].split(', ')
+            feedback_members = [['@' + str(i[1]), i[2]] for i in feedback]
+            if len(feedback_members) == 0:
+                feedback_list = 'Еще никто не оставил отзыв.'
+            else:
+                feedback_list = '\n'.join([i[0] + ': ' + '\U0001F44D' if i[1] == 'like' else
+                                           i[0] + ': ' + '\U0001F44E' if i[1] == 'dislike' else i[1]
+                                           for i in feedback_members] +
+                                          [i + ': —' for i in members if i not in [e[0]
+                                                                                   for e in feedback_members]])
+            self.bot.messaging.send_message(
+                self.bot.users.get_user_peer_by_id(user[0]),
+                'Фидбэк по мероприятию *%s*\n'
+                '%s, тип: %s\n\n'
+                '%s' % (event[1], process, feedback_type, feedback_list),
+                [
+                    interactive_media.InteractiveMediaGroup(
+                        [
+                            interactive_media.InteractiveMedia(
+                                10,
+                                interactive_media.InteractiveMediaButton('back_to_event_list', 'Назад'),
+                            ),
+                            interactive_media.InteractiveMedia(
+                                12,
+                                interactive_media.InteractiveMediaButton('export_%s' % event_id,
+                                                                         'Экспортировать в Excel'),
+                                'primary'
+                            ),
+                            interactive_media.InteractiveMedia(
+                                11,
+                                interactive_media.InteractiveMediaButton('delete_%s' % event_id, 'Удалить'),
+                                'danger'
+                            )
+                        ] if len(feedback_members) > 0 else
+                        [
+                            interactive_media.InteractiveMedia(
+                                10,
+                                interactive_media.InteractiveMediaButton('back_to_event_list', 'Назад'),
+                            ),
+                            interactive_media.InteractiveMedia(
+                                11,
+                                interactive_media.InteractiveMediaButton('delete_%s' % event_id, 'Удалить'),
+                                'danger'
+                            )
+                        ]
+                    )
+                ]
+            )
+        except ValueError:
+            self.bot.messaging.send_message(
+                self.bot.users.get_user_peer_by_id(user[0]),
+                'Номер ивента должен быть из списка выше!\n'
+                'Например, %s' % example_event_id
+            )
+
+    def view_events(self, user):
+        data = self.get_events()
+        events = []
+        for i in data:
+            today = int(datetime.datetime.timestamp(
+                datetime.datetime.strptime(datetime.date.today().strftime('%d.%m.%Y'), '%d.%m.%Y')))
+            emoji = ' \U0001F3C1' if int(i[2]) <= today else ''
+            s = str(i[0]) + '. ' + str(i[1]) + emoji
+            events.append(s)
+        if len(events) == 0:
+            events.append('Здесь пока пусто.')
+        buttons = [
+            interactive_media.InteractiveMediaGroup(
+                [
+                    interactive_media.InteractiveMedia(
+                        9,
+                        interactive_media.InteractiveMediaButton('back_to_menu', 'Назад в меню')
+                    )
+                ]
+            )
+        ]
+        self.bot.messaging.send_message(
+            self.bot.users.get_user_peer_by_id(user[0]),
+            '*Для подробной информации пришли мне номер ивента*\n\n' + '\n'.join(events),
+            buttons
+        )
+        self.set_state(user[0], 'view_events')
+
+    def export_to_excel(self, feedback, feedback_type):
+        print('EXCEL')
+        book = xlwt.Workbook()
+        sheet = book.add_sheet('Лист1', cell_overwrite_ok=True)
+
+        sheet.write(0, 0, 'Пользователь', self.header_style)
+        if feedback_type == 'like_dislike':
+            sheet.write(0, 1, 'Понравилось', self.header_style)
+        else:
+            sheet.write(0, 1, 'Оценка', self.header_style)
+
+        sheet.col(0).width = 256 * 20
+        sheet.col(1).width = 256 * 8
+        for i in range(10):
+            sheet.write(i + 1, 0, str(i))
+        filename = 'Фидбэк.xls'
+        book.save(filename)
+        return filename
 
 
 bot = Bot()
